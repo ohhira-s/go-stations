@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/TechBowl-japan/go-stations/model"
@@ -23,36 +24,64 @@ func NewTODOHandler(svc *service.TODOService) *TODOHandler {
 
 // ServeHTTP handles an HTTP request for a TODO resource.
 func (h *TODOHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+	switch r.Method {
+	case http.MethodPost:
+		var req model.CreateTODORequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Bad Request", http.StatusBadRequest)
+			return
+		}
+
+		if req.Subject == "" {
+			http.Error(w, "Bad Request: subject is empty", http.StatusBadRequest)
+			return
+		}
+
+		createdTODO, err := h.svc.CreateTODO(r.Context(), req.Subject, req.Description)
+		if err != nil {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		resp := model.CreateTODOResponse{
+			TODO: *createdTODO,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+
+	case http.MethodPut:
+		var req model.UpdateTODORequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Bad Request", http.StatusBadRequest)
+			return
+		}
+
+		if req.ID == 0 || req.Subject == "" {
+			http.Error(w, "Bad Request: id or subject is empty", http.StatusBadRequest)
+			return
+		}
+
+		updatedTODO, err := h.svc.UpdateTODO(r.Context(), req.ID, req.Subject, req.Description)
+		if err != nil {
+			if errors.Is(err, &model.ErrNotFound{}) {
+				http.Error(w, "Not Found", http.StatusNotFound)
+			} else {
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			}
+			return
+		}
+
+		resp := model.UpdateTODOResponse{
+			TODO: *updatedTODO,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+
+	default:
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req model.CreateTODORequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Bad Request", http.StatusBadRequest)
-		return
-	}
-
-	if req.Subject == "" {
-		http.Error(w, "Bad Request: subject is empty", http.StatusBadRequest)
-		return
-	}
-
-	createdTODO, err := h.svc.CreateTODO(r.Context(), req.Subject, req.Description)
-	if err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	resp := model.CreateTODOResponse{
-		TODO: *createdTODO,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-
 	}
 }
 
