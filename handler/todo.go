@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/TechBowl-japan/go-stations/model"
 	"github.com/TechBowl-japan/go-stations/service"
@@ -75,6 +76,47 @@ func (h *TODOHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		resp := model.UpdateTODOResponse{
 			TODO: *updatedTODO,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+
+	case http.MethodGet:
+		query := r.URL.Query()
+		prevIDStr := query.Get("prev_id")
+		sizeStr := query.Get("size")
+
+		var prevID, size int64
+		var err error
+
+		if prevIDStr != "" {
+			prevID, err = strconv.ParseInt(prevIDStr, 10, 64)
+			if err != nil {
+				http.Error(w, "Bad Request: invalid prev_id", http.StatusBadRequest)
+				return
+			}
+		}
+		if sizeStr != "" {
+			size, err = strconv.ParseInt(sizeStr, 10, 64)
+			if err != nil {
+				http.Error(w, "Bad Request: invalid size", http.StatusBadRequest)
+				return
+			}
+		}
+
+		const defaultSize = 10
+		if size <= 0 {
+			size = defaultSize
+		}
+
+		todos, err := h.svc.ReadTODO(r.Context(), prevID, size)
+		if err != nil {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		resp := model.ReadTODOResponse{
+			TODOs: todos,
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
